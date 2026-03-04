@@ -14,7 +14,7 @@ import {
   Mail, Coins, Copy, RefreshCw, CheckCircle2, Clock, Timer,
   ExternalLink, Gift, CalendarCheck, Tv, Shield, ChevronRight, ChevronDown,
   Inbox, Send, Plus, Settings, Users, Zap, Trash2, Megaphone,
-  Search, Gem, Diamond, MinusCircle
+  Search, Gem, Diamond, MinusCircle, MessageCircle, X, SendHorizontal
 } from "lucide-react";
 import { SiTelegram } from "react-icons/si";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -107,6 +107,9 @@ export default function Dashboard() {
   const [adModalOpen, setAdModalOpen] = useState(false);
   const [adTimer, setAdTimer] = useState(10);
   const [adComplete, setAdComplete] = useState(false);
+  const [gemAdModalOpen, setGemAdModalOpen] = useState(false);
+  const [gemAdTimer, setGemAdTimer] = useState(10);
+  const [gemAdComplete, setGemAdComplete] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [createEmailOpen, setCreateEmailOpen] = useState(false);
@@ -117,6 +120,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("emails");
   const [emailSelectorOpen, setEmailSelectorOpen] = useState(false);
   const adContainerRef = useRef<HTMLDivElement>(null);
+  const gemAdContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     initTelegramApp();
@@ -247,12 +251,30 @@ export default function Dashboard() {
       hapticNotification("success");
       queryClient.invalidateQueries({ queryKey: ["/api/auth"] });
       toast({
-        title: "Rewards Earned!",
-        description: `+${data.reward} tokens & +${data.gemsEarned} gems from watching ad!`,
+        title: "Tokens Earned!",
+        description: `+${data.reward} tokens from watching ad!`,
       });
       setAdModalOpen(false);
       setAdTimer(10);
       setAdComplete(false);
+    },
+  });
+
+  const gemAdRewardMut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/reward-gem-ad", { telegramId: userId });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      hapticNotification("success");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth"] });
+      toast({
+        title: "Gems Earned!",
+        description: `+${data.gemsEarned} gems from watching ad!`,
+      });
+      setGemAdModalOpen(false);
+      setGemAdTimer(10);
+      setGemAdComplete(false);
     },
   });
 
@@ -286,6 +308,16 @@ export default function Dashboard() {
   }, [adModalOpen, adTimer, adComplete]);
 
   useEffect(() => {
+    if (!gemAdModalOpen || gemAdComplete) return;
+    if (gemAdTimer <= 0) {
+      setGemAdComplete(true);
+      return;
+    }
+    const interval = setInterval(() => setGemAdTimer((t) => t - 1), 1000);
+    return () => clearInterval(interval);
+  }, [gemAdModalOpen, gemAdTimer, gemAdComplete]);
+
+  useEffect(() => {
     if (adModalOpen && adContainerRef.current) {
       const container = adContainerRef.current;
       container.innerHTML = "";
@@ -307,12 +339,43 @@ export default function Dashboard() {
     }
   }, [adModalOpen]);
 
+  useEffect(() => {
+    if (gemAdModalOpen && gemAdContainerRef.current) {
+      const container = gemAdContainerRef.current;
+      container.innerHTML = "";
+      loadAdScript(AD_SOCIAL_BAR_SCRIPT);
+      const nativeDiv = document.createElement("div");
+      nativeDiv.id = AD_NATIVE_CONTAINER_ID + "-gem";
+      container.appendChild(nativeDiv);
+      const nativeScript = document.createElement("script");
+      nativeScript.async = true;
+      nativeScript.setAttribute("data-cfasync", "false");
+      nativeScript.src = AD_NATIVE_BANNER_SCRIPT;
+      container.appendChild(nativeScript);
+    }
+    if (!gemAdModalOpen) {
+      cleanupAdScripts();
+      if (gemAdContainerRef.current) {
+        gemAdContainerRef.current.innerHTML = "";
+      }
+    }
+  }, [gemAdModalOpen]);
+
   const openAdModal = useCallback(() => {
     window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
     loadAdScript(AD_POPUNDER_SCRIPT);
     setAdTimer(10);
     setAdComplete(false);
     setAdModalOpen(true);
+    hapticFeedback("medium");
+  }, []);
+
+  const openGemAdModal = useCallback(() => {
+    window.open(AD_DIRECT_LINK, "_blank", "noopener,noreferrer");
+    loadAdScript(AD_POPUNDER_SCRIPT);
+    setGemAdTimer(10);
+    setGemAdComplete(false);
+    setGemAdModalOpen(true);
     hapticFeedback("medium");
   }, []);
 
@@ -795,29 +858,51 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card className="hover-elevate" data-testid="card-watch-ad">
+            <Card className="hover-elevate" data-testid="card-watch-token-ad">
               <CardContent className="py-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center shrink-0">
                     <Tv className="w-5 h-5 text-purple-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">Watch Ad</p>
-                    <p className="text-xs text-muted-foreground">Earn tokens + gems per ad</p>
+                    <p className="font-medium text-sm">Watch Token Ad</p>
+                    <p className="text-xs text-muted-foreground">Watch an ad to earn tokens</p>
                   </div>
-                  <div className="flex flex-col items-end gap-0.5">
-                    <Badge variant="secondary" className="shrink-0">+20 tokens</Badge>
-                    <Badge variant="outline" className="shrink-0 text-cyan-600 border-cyan-200">+{appSettings.gem_per_ad || "0.2"} gem</Badge>
-                  </div>
+                  <Badge variant="secondary" className="shrink-0">+{appSettings.ad_reward_tokens || "20"} tokens</Badge>
                 </div>
                 <Button
                   size="sm"
                   className="w-full mt-3"
                   onClick={openAdModal}
-                  data-testid="button-watch-ad"
+                  data-testid="button-watch-token-ad"
                 >
-                  <Tv className="w-3 h-3 mr-1.5" />
-                  Watch Ad (Earn Tokens + Gems)
+                  <Coins className="w-3 h-3 mr-1.5 text-yellow-500" />
+                  Watch Ad — Earn Tokens
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate border-cyan-200/30" data-testid="card-watch-gem-ad">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center shrink-0">
+                    <Diamond className="w-5 h-5 text-cyan-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">Watch Gem Ad</p>
+                    <p className="text-xs text-muted-foreground">Watch an ad to earn gems</p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0 text-cyan-600 border-cyan-200">+{appSettings.gem_per_ad || "0.2"} gem</Badge>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full mt-3 border-cyan-200 text-cyan-700 hover:bg-cyan-50"
+                  onClick={openGemAdModal}
+                  data-testid="button-watch-gem-ad"
+                >
+                  <Diamond className="w-3 h-3 mr-1.5 text-cyan-500" />
+                  Watch Ad — Earn Gems
                 </Button>
               </CardContent>
             </Card>
@@ -864,16 +949,19 @@ export default function Dashboard() {
       </div>
 
       <Dialog open={adModalOpen} onOpenChange={(open) => { if (!open && !adComplete) return; setAdModalOpen(open); }}>
-        <DialogContent className="max-w-sm" data-testid="modal-ad">
+        <DialogContent className="max-w-sm" data-testid="modal-token-ad">
           <DialogHeader>
-            <DialogTitle className="text-center">Watch Ad - Earn Rewards</DialogTitle>
+            <DialogTitle className="text-center flex items-center justify-center gap-2">
+              <Coins className="w-5 h-5 text-yellow-500" />
+              Watch Ad — Earn Tokens
+            </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-4">
             <div
               ref={adContainerRef}
               className="w-full min-h-[120px] bg-muted rounded-lg overflow-hidden flex flex-col items-center justify-center"
               id="adModal"
-              data-testid="ad-container"
+              data-testid="token-ad-container"
             >
               <p className="text-xs text-muted-foreground p-4 text-center">Loading ads...</p>
             </div>
@@ -882,7 +970,7 @@ export default function Dashboard() {
               <div className="text-center space-y-3 w-full">
                 <div className="flex items-center justify-center gap-2">
                   <Timer className="w-4 h-4 text-primary" />
-                  <span className="text-2xl font-bold font-mono" id="adTimer" data-testid="text-ad-timer">{adTimer}</span>
+                  <span className="text-2xl font-bold font-mono" data-testid="text-token-ad-timer">{adTimer}</span>
                   <span className="text-sm text-muted-foreground">seconds</span>
                 </div>
                 <Progress value={((10 - adTimer) / 10) * 100} className="h-2" />
@@ -893,10 +981,54 @@ export default function Dashboard() {
                 className="w-full"
                 onClick={() => adRewardMut.mutate()}
                 disabled={adRewardMut.isPending}
-                data-testid="button-claim-ad-reward"
+                data-testid="button-claim-token-reward"
               >
-                <Gift className="w-4 h-4 mr-2" />
-                {adRewardMut.isPending ? "Claiming..." : `Claim 20 Tokens + ${appSettings.gem_per_ad || "0.2"} Gem`}
+                <Coins className="w-4 h-4 mr-2 text-yellow-500" />
+                {adRewardMut.isPending ? "Claiming..." : `Claim ${appSettings.ad_reward_tokens || "20"} Tokens`}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={gemAdModalOpen} onOpenChange={(open) => { if (!open && !gemAdComplete) return; setGemAdModalOpen(open); }}>
+        <DialogContent className="max-w-sm" data-testid="modal-gem-ad">
+          <DialogHeader>
+            <DialogTitle className="text-center flex items-center justify-center gap-2">
+              <Diamond className="w-5 h-5 text-cyan-500" />
+              Watch Ad — Earn Gems
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div
+              ref={gemAdContainerRef}
+              className="w-full min-h-[120px] bg-muted rounded-lg overflow-hidden flex flex-col items-center justify-center"
+              id="gemAdModal"
+              data-testid="gem-ad-container"
+            >
+              <p className="text-xs text-muted-foreground p-4 text-center">Loading ads...</p>
+            </div>
+
+            {!gemAdComplete ? (
+              <div className="text-center space-y-3 w-full">
+                <div className="flex items-center justify-center gap-2">
+                  <Timer className="w-4 h-4 text-cyan-500" />
+                  <span className="text-2xl font-bold font-mono" data-testid="text-gem-ad-timer">{gemAdTimer}</span>
+                  <span className="text-sm text-muted-foreground">seconds</span>
+                </div>
+                <Progress value={((10 - gemAdTimer) / 10) * 100} className="h-2" />
+                <p className="text-xs text-muted-foreground">Please wait for the timer to complete</p>
+              </div>
+            ) : (
+              <Button
+                className="w-full border-cyan-200 text-cyan-700 hover:bg-cyan-50"
+                variant="outline"
+                onClick={() => gemAdRewardMut.mutate()}
+                disabled={gemAdRewardMut.isPending}
+                data-testid="button-claim-gem-reward"
+              >
+                <Diamond className="w-4 h-4 mr-2 text-cyan-500" />
+                {gemAdRewardMut.isPending ? "Claiming..." : `Claim ${appSettings.gem_per_ad || "0.2"} Gems`}
               </Button>
             )}
           </div>
@@ -984,6 +1116,8 @@ export default function Dashboard() {
       {isAdmin && (
         <AdminPanel open={adminPanelOpen} onClose={() => setAdminPanelOpen(false)} userId={userId} />
       )}
+
+      <ChatBubble />
     </div>
   );
 }
@@ -1044,6 +1178,9 @@ function AdminPanel({ open, onClose, userId }: { open: boolean; onClose: () => v
   const [giftTelegramId, setGiftTelegramId] = useState("");
   const [giftAmount, setGiftAmount] = useState("");
   const [giftMode, setGiftMode] = useState<"add" | "deduct">("add");
+  const [gemGiftTelegramId, setGemGiftTelegramId] = useState("");
+  const [gemGiftAmount, setGemGiftAmount] = useState("");
+  const [gemGiftMode, setGemGiftMode] = useState<"add" | "deduct">("add");
   const [massGiftAmount, setMassGiftAmount] = useState("");
   const [broadcastMsg, setBroadcastMsg] = useState("");
   const [userSearch, setUserSearch] = useState("");
@@ -1131,6 +1268,29 @@ function AdminPanel({ open, onClose, userId }: { open: boolean; onClose: () => v
       toast({ title: "Success!", description: `${giftAmount} tokens ${action} ${giftTelegramId}` });
       setGiftTelegramId("");
       setGiftAmount("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed", variant: "destructive" });
+    },
+  });
+
+  const giftGemsMut = useMutation({
+    mutationFn: async () => {
+      const amount = gemGiftMode === "deduct" ? -Math.abs(parseFloat(gemGiftAmount)) : Math.abs(parseFloat(gemGiftAmount));
+      const res = await apiRequest("POST", "/api/admin/gift-gems", {
+        adminId: userId,
+        telegramId: gemGiftTelegramId,
+        amount,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      const action = gemGiftMode === "deduct" ? "deducted from" : "sent to";
+      toast({ title: "Success!", description: `${gemGiftAmount} gems ${action} ${gemGiftTelegramId}` });
+      setGemGiftTelegramId("");
+      setGemGiftAmount("");
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed", variant: "destructive" });
@@ -1424,6 +1584,63 @@ function AdminPanel({ open, onClose, userId }: { open: boolean; onClose: () => v
             <Card>
               <CardContent className="py-3 space-y-3">
                 <div className="flex items-center gap-2">
+                  <Diamond className="w-4 h-4 text-cyan-500" />
+                  <p className="text-sm font-medium">Add/Deduct Gems</p>
+                </div>
+                <div className="flex gap-1 mb-2">
+                  <Button
+                    size="sm"
+                    variant={gemGiftMode === "add" ? "default" : "outline"}
+                    className="flex-1 h-7 text-xs"
+                    onClick={() => setGemGiftMode("add")}
+                    data-testid="button-gem-mode-add"
+                  >
+                    <Diamond className="w-3 h-3 mr-1" /> Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={gemGiftMode === "deduct" ? "destructive" : "outline"}
+                    className="flex-1 h-7 text-xs"
+                    onClick={() => setGemGiftMode("deduct")}
+                    data-testid="button-gem-mode-deduct"
+                  >
+                    <MinusCircle className="w-3 h-3 mr-1" /> Deduct
+                  </Button>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Telegram ID"
+                    value={gemGiftTelegramId}
+                    onChange={(e) => setGemGiftTelegramId(e.target.value)}
+                    className="h-8 text-xs"
+                    data-testid="input-gem-gift-telegram-id"
+                  />
+                  <Input
+                    placeholder="Amount"
+                    type="number"
+                    step="0.1"
+                    value={gemGiftAmount}
+                    onChange={(e) => setGemGiftAmount(e.target.value)}
+                    className="h-8 text-xs w-24"
+                    data-testid="input-gem-gift-amount"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  variant={gemGiftMode === "deduct" ? "destructive" : "default"}
+                  onClick={() => giftGemsMut.mutate()}
+                  disabled={giftGemsMut.isPending || !gemGiftTelegramId || !gemGiftAmount}
+                  data-testid="button-gift-gems"
+                >
+                  {giftGemsMut.isPending ? "Processing..." : gemGiftMode === "deduct" ? "Deduct Gems" : "Gift Gems"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="py-3 space-y-3">
+                <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-green-500" />
                   <p className="text-sm font-medium">Mass Gift to All Users</p>
                 </div>
@@ -1552,5 +1769,131 @@ function AdminPanel({ open, onClose, userId }: { open: boolean; onClose: () => v
         </Dialog>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ChatBubble() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; text: string }>>([
+    { role: "assistant", text: "Hi! I'm your BusinessMail Assistant. Ask me anything about the app — how to earn tokens, gems, create emails, and more!" },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const sendMessage = useCallback(async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMsg }),
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setMessages((prev) => [...prev, { role: "assistant", text: data.reply }]);
+      } else {
+        setMessages((prev) => [...prev, { role: "assistant", text: "Sorry, I couldn't process that. Please try again." }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", text: "Connection error. Please try again later." }]);
+    } finally {
+      setLoading(false);
+    }
+  }, [input, loading]);
+
+  return (
+    <>
+      {!isOpen && (
+        <button
+          onClick={() => { setIsOpen(true); hapticFeedback("light"); }}
+          className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          data-testid="button-chat-bubble"
+        >
+          <MessageCircle className="w-6 h-6" />
+        </button>
+      )}
+
+      {isOpen && (
+        <div className="fixed bottom-5 right-5 z-50 w-80 h-[420px] bg-background border rounded-2xl shadow-2xl flex flex-col overflow-hidden" data-testid="chat-panel">
+          <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground rounded-t-2xl">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-4 h-4" />
+              <span className="font-medium text-sm">BusinessMail Assistant</span>
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-primary-foreground/20 transition-colors"
+              data-testid="button-close-chat"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto px-3 py-3 space-y-3"
+            data-testid="chat-messages"
+          >
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground rounded-br-md"
+                      : "bg-muted text-foreground rounded-bl-md"
+                  }`}
+                  data-testid={`chat-msg-${idx}`}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-muted rounded-2xl rounded-bl-md px-3 py-2 text-xs text-muted-foreground">
+                  <span className="animate-pulse">Thinking...</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="px-3 py-2 border-t flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
+              placeholder="Ask me anything..."
+              className="flex-1 h-9 px-3 rounded-full border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+              disabled={loading}
+              data-testid="input-chat-message"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 disabled:opacity-50 hover:bg-primary/90 transition-colors"
+              data-testid="button-send-chat"
+            >
+              <SendHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

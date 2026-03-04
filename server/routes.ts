@@ -183,13 +183,27 @@ export async function registerRoutes(
       const reward = parseInt(rewardStr);
       const updated = await storage.updateUserTokens(String(telegramId), reward);
 
-      const gemPerAdStr = await storage.getSetting("gem_per_ad") || "0.2";
-      const gemPerAd = parseFloat(gemPerAdStr);
-      const updatedWithGems = await storage.updateUserGems(String(telegramId), gemPerAd);
-
-      res.json({ user: updatedWithGems || updated, reward, gemsEarned: gemPerAd });
+      res.json({ user: updated, reward });
     } catch (err: any) {
       log(`Ad reward error: ${err.message}`, "api");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/reward-gem-ad", async (req, res) => {
+    try {
+      const { telegramId } = req.body;
+      if (!telegramId) return res.status(400).json({ error: "telegramId required" });
+      const user = await storage.getUserByTelegramId(String(telegramId));
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const gemPerAdStr = await storage.getSetting("gem_per_ad") || "0.2";
+      const gemPerAd = parseFloat(gemPerAdStr);
+      const updated = await storage.updateUserGems(String(telegramId), gemPerAd);
+
+      res.json({ user: updated, gemsEarned: gemPerAd });
+    } catch (err: any) {
+      log(`Gem ad reward error: ${err.message}`, "api");
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -355,6 +369,22 @@ export async function registerRoutes(
       const user = await storage.getUserByTelegramId(String(telegramId));
       if (!user) return res.status(404).json({ error: "User not found" });
       const updated = await storage.updateUserTokens(String(telegramId), tokens);
+      res.json({ success: true, user: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/admin/gift-gems", async (req, res) => {
+    try {
+      const { adminId, telegramId, amount } = req.body;
+      if (!isAdmin(String(adminId))) return res.status(403).json({ error: "Unauthorized" });
+      const gems = parseFloat(amount);
+      if (isNaN(gems) || gems === 0) return res.status(400).json({ error: "Invalid amount" });
+
+      const user = await storage.getUserByTelegramId(String(telegramId));
+      if (!user) return res.status(404).json({ error: "User not found" });
+      const updated = await storage.updateUserGems(String(telegramId), gems);
       res.json({ success: true, user: updated });
     } catch (err: any) {
       res.status(500).json({ error: "Internal error" });
@@ -702,6 +732,47 @@ export default {
     } catch (err: any) {
       log(`Deploy worker error: ${err.message}`, "api");
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== "string") return res.status(400).json({ error: "message required" });
+
+      const systemPrompt = `You are BusinessMail Assistant, a helpful AI assistant for the BusinessMail Telegram Mini App on filmcity.online. You help users understand and use the app.
+
+Key features you know about:
+- Users can create temporary email addresses on filmcity.online domain
+- Token Economy: Users earn tokens by joining the Telegram channel @aamoviesofficial (+20 tokens), daily check-in (+6 tokens), or watching token ads (+20 tokens)
+- Gem Economy: Users earn gems by watching gem ads (+${await storage.getSetting("gem_per_ad") || "0.2"} gems per ad). Each full gem (1.0) gives 1 bonus email slot automatically
+- Tokens are used to extend email lifespan (costs ${await storage.getSetting("extension_cost") || "10"} tokens for +${await storage.getSetting("extension_days") || "2"} days)
+- Emails expire after ${await storage.getSetting("default_email_days") || "7"} days by default
+- Maximum ${await storage.getSetting("max_emails_per_user") || "10"} emails per user (plus bonus slots from gems)
+- Users can create custom email names or get random ones
+- Users can use subdomains like name@subdomain.filmcity.online
+- Inbox auto-refreshes every 10 seconds
+- HTML emails are rendered with full formatting
+- Users must join @aamoviesofficial channel before creating emails
+- Token ads and gem ads are separate — watch token ads for tokens, gem ads for gems
+- The app works as a Telegram Mini App
+
+Keep responses concise, friendly, and helpful. Use simple language. If asked about something unrelated to the app, politely redirect to app-related topics.`;
+
+      const prompt = encodeURIComponent(`${systemPrompt}\n\nUser: ${message}\n\nAssistant:`);
+      const response = await fetch(`https://text.pollinations.ai/${prompt}`, {
+        headers: { "Accept": "text/plain" },
+      });
+
+      if (!response.ok) {
+        return res.status(502).json({ error: "AI service unavailable" });
+      }
+
+      const text = await response.text();
+      res.json({ reply: text.trim() });
+    } catch (err: any) {
+      log(`Chat error: ${err.message}`, "api");
+      res.status(500).json({ error: "Chat service error" });
     }
   });
 
